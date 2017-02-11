@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+[[ $DOKKU_TRACE ]] && set -x
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$PLUGIN_CORE_AVAILABLE_PATH/config/functions"
+source "$PLUGIN_CORE_AVAILABLE_PATH/apps/functions"
+
+from_login() { # app user pass [registry]
+    test -z "$1" && dokku_log_fail "Must specify an app or --global"
+    test -z "$3" && dokku_log_fail "Must specify a username and password"
+    APP=$1
+    test "$1" == "--global" && APP=. || verify_app_name $APP
+    test -f $DOKKU_ROOT/$1/docker-config.json || echo '{"auths":{}}' > $DOKKU_ROOT/$1/docker-config.json
+    mkdir -p ~/.docker
+    cp $DOKKU_ROOT/$APP/docker-config.json ~/.docker/config.json
+    docker login -u "$2" -p "$3" $4 && cp ~/.docker/config.json $DOKKU_ROOT/$APP/docker-config.json
+}
+
+from_image_pull() {
+    test -f $DOKKU_ROOT/$1/docker-config.json || echo '{"auths":{}}' > $DOKKU_ROOT/$1/docker-config.json
+    mkdir -p ~/.docker
+    cp $DOKKU_ROOT/$1/docker-config.json ~/.docker/config.json
+    docker pull $2 || dokku_log_fail "Pull failed"
+    docker tag $2 dokku/$1:from
+    config_set --no-restart $1 "FROM=$2"
+}
+
+from_image_pull_with_token() {
+    host="$(echo $2|cut -d/ -sf1)"
+    : ${host:=docker.io}
+
+    mkdir -p ~/.docker
+    echo '{"auths":{"'"$host"'":{"auth":"'"$3"'"}}}' > ~/.docker/config.json
+    docker pull $2 || {
+        echo '{"auths":{"https://registry-1.docker.io/v2/":{"auth":"'"$3"'"}}}' > ~/.docker/config.json
+        docker pull $2 || dokku_log_fail "Authentication failed"
+    }
+    docker tag $2 dokku/$1:from
+}
+from_image_pull_with_login() {
+    host="$(echo $2|cut -d/ -sf1)"
+
+    docker login -u "$3" -p "$4" $host
+    docker pull $2 || {
+        docker login -u "$3" -p "$4"
+        docker pull $2 || dokku_log_fail "Authentication failed"
+    }
+    docker tag $2 dokku/$1:from
+}
+
+from_image() {
+    
+    test -z "$1" && dokku_log_fail "Must specify an app" \
+      || { APP=$1; shift; }
+    test -z "$1" && dokku_log_fail "Must specify an image" \
+      || { IMG=$1; shift; }
+
+    test -d $DOKKU_ROOT/$APP || apps_create $APP
+
+    test -z "$1" || test "$1" == "--" && {
+        from_image_pull $APP $IMG || dokku_log_fail "Problem pulling $IMG, authentication required?"
+        shift || true
+    } || {
+        test -z "$2" || test "$2" == "--" && {
+            from_image_pull_with_token $APP $IMG $1 || dokku_log_fail "There was a problem pulling with token"
+            shift && shift || true
+        } || {
+            from_image_pull_with_login $APP $IMG $1 $2 || dokku_log_fail "There was a problem pulling with login"
+            shift && shift && shift || true
+        }
+    }
+
+    test -n "$1" && config_set --no-restart $APP "$@"
+
+    release_and_deploy $APP "from"
+
+echo done
+    
+}
+

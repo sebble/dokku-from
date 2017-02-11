@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+[[ " help from " == *" $1 "* ]] || [[ "$1" == "from:"* ]] || exit "$DOKKU_NOT_IMPLEMENTED_EXIT"
+[[ $DOKKU_TRACE ]] && set -x
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$PLUGIN_CORE_AVAILABLE_PATH/config/functions"
+source "$PLUGIN_AVAILABLE_PATH/from/functions"
+
+case "${1:-}" in
+  from:image)
+      shift
+      from_image "$@"
+    ;;
+  from:login)
+      shift
+      from_login "$@"
+    ;;
+  from:git)
+      dokku_log_fail "Not implemented. See dokku-clone."
+    ;;
+  help)
+    echo "    from, Create an app from a remote source"
+    ;;
+  from | from:help)
+    usage() {
+      cat<<commands
+    from, Create an app from a remote source
+    from:image <app> <image> [[<user>] (<pass>|<token>)] [-- ENV=val [ENV2=val ..]], Build from remote Docker image
+    from:login (<app>|--global) <user> <pass> [<registry>], Login to a registry (default docker.io)
+    from:help, This help
+commands
+    }
+    cat<<usage
+Usage: dokku from[:COMMAND]
+
+Manage application fromship
+
+Additional commands:
+usage
+    usage|column -c2 -t -s,
+    cat<<examples
+
+Examples:
+    dokku from:image best-app openlab/wordpress -- DATABASE_URL=mysql://USERNAME:PASSWORD@dig-mysql.ncl.ac.uk:3306/DATABASE_NAME
+    dokku from:image best-app registry.example.com/group/image:v2 1f587bba71a15b998392ecea1662bf9b
+    dokku from:image best-app gitlab.com:4567/user/project ci-deploy 1f587bba71a15b99
+    dokku from:git best-app openlab/wordpress -- DATABASE_URL=mysql://USERNAME:PASSWORD@dig-mysql.ncl.ac.uk:3306/DATABASE_NAME
+examples
+    echo
+    ;;
+  *)
+    exit "$DOKKU_NOT_IMPLEMENTED_EXIT"
+    ;;
+esac

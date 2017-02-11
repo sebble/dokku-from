@@ -1,0 +1,4 @@
+[plugin]
+description = "Create an app from remote image (sblio)"
+version = "0.0.1"
+[plugin.config]
